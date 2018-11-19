@@ -135,7 +135,7 @@ def compute_pca(df_array, pca_components):
 
 def compute_tsne(df_array, pca_components):
     """
-
+    method to collapse dimentionality using tsne (very slow for long DNA sequences)
     :param df_array:
     :param pca_components:
     :return:
