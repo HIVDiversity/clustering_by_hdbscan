@@ -282,8 +282,10 @@ def rescue_outliers_for_freq_updating(final_centroids, total_number_seqs, outlie
 
 def write_output(final_centroids, outliers, outfile):
 
+    sorted_final_centroids = collections.OrderedDict(sorted(final_centroids.items(),
+                                                            key=lambda kv: float(kv[0].split("_")[-1]), reverse=True))
     with open(outfile, 'w') as handle:
-        for name, seq in final_centroids.items():
+        for name, seq in sorted_final_centroids.items():
             handle.write(">{}\n{}\n".format(name, seq))
 
     outliers_ourtile = outfile.replace(".fasta", "_outliers.fasta")
@@ -362,7 +364,7 @@ def main(infile, outpath, name, min_cluster_size, fields, pca_components):
     num_clusts = sorted(list(set(clusterer.labels_)))[-1]
 
     # collect sequences in to their clusters
-    clustered_seqs_d = collections.defaultdict(dict)
+    clustered_seqs_d = collections.defaultdict(str)
     for i in names_clusts_clustprob:
         seq_name = i[0]
         cluster = str(i[1]).zfill(3)
@@ -377,7 +379,6 @@ def main(infile, outpath, name, min_cluster_size, fields, pca_components):
     final_centroids = rescue_outliers_for_freq_updating(centroids, total_number_seqs, outliers)
 
     write_output(final_centroids, outliers, outfile)
-
 
     print("{} clusters were identified".format(str((num_clusts - 1))))
 
