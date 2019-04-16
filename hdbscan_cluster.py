@@ -1,25 +1,18 @@
 #!/usr/bin/python3
-from __future__ import print_function
-from __future__ import division
 import os
+import sys
 import argparse
 from itertools import groupby
 import collections
-import pandas as pd
 from sklearn import decomposition
 from sklearn import manifold
 import hdbscan
 import seaborn as sns
 import matplotlib.pyplot as plt
 import numpy as np
-import time
-from Bio.Align.AlignInfo import SummaryInfo
-from Bio.Alphabet.IUPAC import ambiguous_dna
-from Bio.Align import MultipleSeqAlignment
 
 
 __author__ = 'Colin Anthony'
-
 
 
 def py3_fasta_iter(fasta_name):
@@ -71,31 +64,6 @@ def fasta_to_dct_rev(file_name):
         dct[str(v).upper()].append(new_key)
 
     return dct
-
-
-def recode_dna_ordinal(dna_dict):
-    coded_dna_d = collections.defaultdict(list)
-    nucl_coding_assignment = {"A": 1,
-                              "C": 2,
-                              "G": 3,
-                              "T": 4,
-                              "-": 5,
-                              }
-
-    for seq_name, seq in dna_dict.items():
-        new_seq = []
-        seq = seq.upper()
-        for base in seq:
-            if base not in list(nucl_coding_assignment.keys()):
-                new_base = 6
-            else:
-                new_base = nucl_coding_assignment[base]
-
-            new_seq.append(new_base)
-
-        coded_dna_d[seq_name] = new_seq
-
-    return coded_dna_d
 
 
 def recode_dna_onehot(dna_dict):
@@ -154,7 +122,59 @@ def cluster_hdbscan(pca_array, min_cluster_size):
     return clusterer
 
 
-def get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_seqs_d, outfile):
+def d_freq_lists(dna_list):
+    n = len(dna_list[0])
+    dist_dict = {'A': [0]*n, 'C': [0]*n, 'G': [0]*n, 'T': [0]*n, '-': [0]*n}
+
+    total = len(dna_list)
+    for seq in dna_list:
+        for index, dna in enumerate(seq):
+            dist_dict[dna][index] += 1
+
+    for base, freqlist in dist_dict.items():
+        for i, cnt in enumerate(freqlist):
+            frq = round((cnt/total*100), 4)
+            freqlist[i] = frq
+        dist_dict[base] = freqlist
+
+    return dist_dict
+
+
+def consensus_maker(d):
+    seq_list = []
+    for names, seq in d.items():
+        seq_list.append(seq)
+
+    master_profile = d_freq_lists(seq_list)
+    n = len(seq_list[0])
+    consensus = ""
+    degen = {('A', 'G'): 'R', ('C', 'T'): 'Y', ('A', 'C'): 'M', ('G', 'T'): 'K', ('C', 'G'): 'S', ('A', 'T'): 'W',
+             ('A', 'C', 'T'): 'H', ('C', 'G', 'T'): 'B', ('A', 'C', 'G'): 'V', ('A', 'G', 'T'): 'D',
+             ('A', 'C', 'G', 'T'): 'N'}
+
+    for i in range(n):
+        dct = {N: master_profile[N][i] for N in ['T', 'G', 'C', 'A', '-']}
+        m = max(dct.values())
+        b = max(dct, key=dct.get)
+        l = list(sorted(N for N in ['T', 'G', 'C', 'A', '-'] if dct[N] == m))
+        if len(l) == 1:
+            consensus += str(b)
+        elif '-' in l and len(l) == 2:
+            l.remove('-')
+            l = tuple(l)
+            consensus += str(l)
+        elif '-' in l and len(l) > 2:
+            l.remove('-')
+            l = tuple(l)
+            consensus += str(degen[l])
+        else:
+            l = tuple(l)
+            consensus += str(degen[l])
+
+    return consensus
+
+
+def get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_seqs_d, fields):
     print("getting consensus of cluster")
     collected_cluster_centroids = collections.defaultdict(list)
     outliers = collections.defaultdict(list)
@@ -165,31 +185,27 @@ def get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_se
         if cluster != "-01":
             name_stem_assigned = False
             name_stem = ''
-            align_obj = MultipleSeqAlignment([], ambiguous_dna)
             for seq_name, seq in cluster_dict.items():
                 if not name_stem_assigned:
-                    name_stem = "_".join(seq_name.split("_")[:6])
+                    name_stem = "_".join(seq_name.split("_")[:fields])
                     name_stem_assigned = True
-                    align_obj.add_sequence(seq_name, str(seq))
 
-            summary_align = SummaryInfo(align_obj)
-            consensus = SummaryInfo.gap_consensus(summary_align, threshold=0.51, ambiguous='N', consensus_alpha=ambiguous_dna)
-
+            consensus = consensus_maker(cluster_dict)
             try:
                 names_list = in_seqs_d_reversed[consensus]
                 centroid_seq = in_seqs_d[names_list[0]]
-                clust_seq_name = name_stem + "_orig_" + str(cluster).zfill(3) + "_" + str(freq).zfill(3)
+
+                clust_seq_name = name_stem + "_orig_" + str(cluster).zfill(3) + "_" + str(round(cluster_size)).zfill(4) \
+                                 + "_" + str(round(freq, 3)).zfill(3)
                 collected_cluster_centroids[centroid_seq].append(clust_seq_name)
             except:
-                clust_seq_name = name_stem + "_cons_" + str(cluster).zfill(3) + "_" + str(freq).zfill(3)
+                clust_seq_name = name_stem + "_cons_" + str(cluster).zfill(3) + "_" + str(round(cluster_size)).zfill(4) \
+                                 + "_" + str(freq).zfill(3)
                 collected_cluster_centroids[consensus].append(clust_seq_name)
-            #     # Todo try and get sequence with highest cluster prob, choose most abundant if mult hits,
-            #     # todo then choose random if still multiple hits
 
         else:
             for seq_name, seq in cluster_dict.items():
                 outliers[seq].append(seq_name)
-
 
     final_centroids = collections.defaultdict()
     for seq, name in collected_cluster_centroids.items():
@@ -202,7 +218,7 @@ def get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_se
                 stem = "_".join(name[idx].split("_")[:-1])
                 first = False
             for i in name:
-                freq += float(i.split("_")[-1])
+                freq += round(float(i.split("_")[-1]), 3)
                 if first:
                     stem = "_".join(i.split("_")[:-1])
                     first = False
@@ -210,6 +226,61 @@ def get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_se
             final_centroids[new_name] = seq
         else:
             final_centroids[name[0]] = seq
+
+    return final_centroids, outliers
+
+
+def customdist(s1, s2):
+
+    if len(s1) != len(s2):
+        print("sequences must be the same length")
+        sys.exit()
+
+    dist = 0
+    for c1, c2 in zip(s1, s2):
+        if c1 != c2:
+            dist += 1
+    diff = 0
+    for i in range(len(s1)-1):
+        if s1[i] != s2[i]:
+            if (s1[i] == "-" and s1[i+1] == "-" and s2[i+1] != "-") \
+                    or (s2[i] == "-" and s2[i+1] == "-" and s1[i+1] != "-"):
+                diff += 1
+
+    return (dist-diff)
+
+
+def rescue_outliers_for_freq_updating(final_centroids, total_number_seqs, outliers):
+
+    update_freq_d = collections.defaultdict(int)
+    for out_s, out_n in outliers.items():
+        max_dist = len(out_s.replace("_", ""))
+        max_dist_cent = None
+        for cent_n, cent_s in final_centroids.items():
+            dist = customdist(out_s, cent_s)
+            if dist < max_dist:
+                max_dist = dist
+                max_dist_cent = cent_n
+        if max_dist_cent is not None:
+            update_freq_d[max_dist_cent] += 1
+
+    updated_centroids = collections.defaultdict()
+
+    for cent_n, cent_s in final_centroids.items():
+        parts = cent_n.split("_")
+        count = int(parts[-2])
+        freq = float(parts[-1]) / 100
+        new_count = count + update_freq_d[cent_n]
+        new_freq = round(new_count / total_number_seqs * 100, 2)
+        parts[-2] = str(new_count)
+        parts[-1] = str(new_freq)
+        new_name = "_".join(parts)
+        updated_centroids[new_name] = cent_s
+
+    return updated_centroids
+
+
+def write_output(final_centroids, outliers, outfile):
 
     with open(outfile, 'w') as handle:
         for name, seq in final_centroids.items():
@@ -247,8 +318,8 @@ def plot_clusters(clusterer, pca_array, num_clusts, outfile):
     plt.savefig(outfile, ext='png', dpi=600, format='png', facecolor='white', bbox_inches='tight')
 
 
-def main(infile, outpath, name, min_cluster_size, pca_components):
-    total_start = time.time()
+def main(infile, outpath, name, min_cluster_size, fields, pca_components):
+
     # get absolute paths
     infile = os.path.abspath(infile)
     outpath = os.path.abspath(outpath)
@@ -261,36 +332,15 @@ def main(infile, outpath, name, min_cluster_size, pca_components):
 
     in_seqs_d_reversed = fasta_to_dct_rev(infile)
 
-    ordinal = False
-    # True = use ordinal values for DNA encoding.
-    # Changing this will decrease array width,
-    # but will reduce accuracy of cluster identification.
-    # only do this if array width limitations exist
-
-    print("Coding DNA sequences to numerical values\nfor dimensionality collapse and clustering")
-
-    if ordinal:
-        re_coded_dna_d = recode_dna_ordinal(in_seqs_d)
-        df = pd.DataFrame.from_dict(re_coded_dna_d, orient='index')
-        df.reset_index(level=0, inplace=True)
-        df.rename(columns={'index': 'seq_name'}, inplace=True)
-        df.fillna(0, inplace=True)
-        headers = list(df)
-        sequence_names = df[headers[0]]
-        df.drop(headers[0], axis=1, inplace=True)
-        df_array = df.values
+    print("Coding DNA sequences to numerical values for dimensionality collapse and clustering")
 
     # recode strings into oneHot coding of list of arrays, for each sequence. Better resolution than ordinal coding.
-    else:
-        re_coded_dna_d = recode_dna_onehot(in_seqs_d)
-        df_array = [x for k, x in re_coded_dna_d.items()]
-        sequence_names = [k for k, x in re_coded_dna_d.items()]
+    re_coded_dna_d = recode_dna_onehot(in_seqs_d)
+    df_array = [x for k, x in re_coded_dna_d.items()]
+    sequence_names = [k for k, x in re_coded_dna_d.items()]
 
-    # Reduce dimensionality
+    # Reduce dimensionality with PCA or with TSNE
     linear_dimension_collapse = True
-
-    # Reduce dimensionality with PCA then with TSNE
-
     if linear_dimension_collapse:
         # todo get optimal number of components to cluster on
         print("computing PCA for alignment")
@@ -322,7 +372,12 @@ def main(infile, outpath, name, min_cluster_size, pca_components):
         new_name = "{}_{}_{}".format(seq_name, cluster, cluster_prob)
         clustered_seqs_d[cluster][new_name] = seq
 
-    get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_seqs_d, outfile)
+    centroids, outliers = get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_seqs_d, fields)
+
+    final_centroids = rescue_outliers_for_freq_updating(centroids, total_number_seqs, outliers)
+
+    write_output(final_centroids, outliers, outfile)
+
 
     print("{} clusters were identified".format(str((num_clusts - 1))))
 
@@ -334,7 +389,7 @@ if __name__ == "__main__":
                                                  'analysis and density based clustering with HDBSCAN',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-    parser.add_argument('-i', '--infile', default=argparse.SUPPRESS, type=str,
+    parser.add_argument('-in', '--infile', default=argparse.SUPPRESS, type=str,
                         help='The input fasta file', required=True)
     parser.add_argument('-o', '--outpath', default=argparse.SUPPRESS, type=str,
                         help='The path to where the output file will be copied', required=True)
@@ -342,6 +397,9 @@ if __name__ == "__main__":
                         help='The prefix for the outfile', required=True)
     parser.add_argument('-s', '--min_cluster_size', default=2, type=int,
                         help='The minimum number of sequences needed to form a cluster', required=False)
+    parser.add_argument('-f', '--fields', default=6, type=int,
+                        help='The number of base name fields to keep (based on "_" delimiter. eg: -f 2, '
+                             'to keep the first two fields)', required=False)
     parser.add_argument('-c', '--pca_components', default=2, type=int,
                         help='The number of PCA components to pass to the clustering algorithm', required=False)
 
@@ -350,6 +408,7 @@ if __name__ == "__main__":
     outpath = args.outpath
     name = args.name
     min_cluster_size = args.min_cluster_size
+    fields = args.fields
     pca_components = args.pca_components
 
-    main(infile, outpath, name, min_cluster_size, pca_components)
+    main(infile, outpath, name, min_cluster_size, fields, pca_components)
