@@ -141,6 +141,11 @@ def d_freq_lists(dna_list):
 
 
 def consensus_maker(d):
+    """
+    Create a consensus sequence from an alignment
+    :param d: (dict) dictionary of an alignment (key = seq name (str): value = aligned sequence (str))
+    :return: (str) the consensus sequence
+    """
     seq_list = []
     for names, seq in d.items():
         seq_list.append(seq)
@@ -364,7 +369,7 @@ def main(infile, outpath, name, min_cluster_size, fields, pca_components):
     num_clusts = sorted(list(set(clusterer.labels_)))[-1]
 
     # collect sequences in to their clusters
-    clustered_seqs_d = collections.defaultdict(str)
+    clustered_seqs_d = collections.defaultdict(dict)
     for i in names_clusts_clustprob:
         seq_name = i[0]
         cluster = str(i[1]).zfill(3)
@@ -374,10 +379,13 @@ def main(infile, outpath, name, min_cluster_size, fields, pca_components):
         new_name = "{}_{}_{}".format(seq_name, cluster, cluster_prob)
         clustered_seqs_d[cluster][new_name] = seq
 
+    print("Getting consensus/centroid for each cluster")
     centroids, outliers = get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_seqs_d, fields)
 
+    print("Adjusting cluster frequencies based on closest outliers")
     final_centroids = rescue_outliers_for_freq_updating(centroids, total_number_seqs, outliers)
 
+    print("Write output to file")
     write_output(final_centroids, outliers, outfile)
 
     print("{} clusters were identified".format(str((num_clusts - 1))))
