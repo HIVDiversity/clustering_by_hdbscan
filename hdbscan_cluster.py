@@ -123,6 +123,11 @@ def cluster_hdbscan(pca_array, min_cluster_size):
 
 
 def d_freq_lists(dna_list):
+    """
+
+    :param dna_list: (list) a alist of DNA sequences
+    :return: (dict) a dictionary of the frequency for each base, for each site in the alignment
+    """
     n = len(dna_list[0])
     dist_dict = {'A': [0]*n, 'C': [0]*n, 'G': [0]*n, 'T': [0]*n, '-': [0]*n}
 
