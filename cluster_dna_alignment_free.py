@@ -336,7 +336,7 @@ def plot_clusters(clusterer, pca_array, num_clusts, outfile):
     plt.savefig(outfile, ext='png', dpi=600, format='png', facecolor='white', bbox_inches='tight')
 
 
-def main(infile, outpath, name, min_cluster_size, fields, pca_components):
+def main(infile, outpath, name, min_cluster_size, pca_components):
 
     # get absolute paths
     infile = pathlib.Path(infile).absolute()
@@ -406,8 +406,9 @@ def main(infile, outpath, name, min_cluster_size, fields, pca_components):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description='Clusters a fasta file into haplotypes, using principle component '
-                                                 'analysis and density based clustering with HDBSCAN',
+    parser = argparse.ArgumentParser(description='Clusters unaligned DNA sequences into haplotypes, '
+                                                 'using principle component analysis '
+                                                 'and density based clustering with HDBSCAN',
                                      formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
     parser.add_argument('-in', '--infile', default=argparse.SUPPRESS, type=str,
@@ -418,9 +419,6 @@ if __name__ == "__main__":
                         help='The prefix for the outfile', required=True)
     parser.add_argument('-s', '--min_cluster_size', default=2, type=int,
                         help='The minimum number of sequences needed to form a cluster', required=False)
-    parser.add_argument('-f', '--fields', default=6, type=int,
-                        help='The number of base name fields to keep (based on "_" delimiter. eg: -f 2, '
-                             'to keep the first two fields)', required=False)
     parser.add_argument('-c', '--pca_components', default=2, type=int,
                         help='The number of PCA components to pass to the clustering algorithm', required=False)
 
@@ -429,7 +427,6 @@ if __name__ == "__main__":
     outpath = args.outpath
     name = args.name
     min_cluster_size = args.min_cluster_size
-    fields = args.fields
     pca_components = args.pca_components
 
-    main(infile, outpath, name, min_cluster_size, fields, pca_components)
+    main(infile, outpath, name, min_cluster_size, pca_components)
