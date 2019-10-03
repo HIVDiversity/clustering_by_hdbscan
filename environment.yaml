@@ -1,0 +1,11 @@
+name: clustering
+channels:
+  - bioconda
+  - conda-forge
+  - defaults
+  - anaconda
+dependencies:
+  - python=3.7
+  - seaborn
+  - hdbscan
+  - scikit-learn
