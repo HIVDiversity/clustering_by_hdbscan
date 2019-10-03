@@ -1,11 +1,12 @@
 name: clustering
 channels:
-  - bioconda
   - conda-forge
   - defaults
   - anaconda
+  - bioconda
 dependencies:
   - python=3.7
   - seaborn
   - hdbscan
   - scikit-learn
+  - mafft
