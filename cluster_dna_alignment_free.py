@@ -2,6 +2,7 @@ import os
 import sys
 import pathlib
 import argparse
+import subprocess
 from itertools import groupby
 import collections
 from sklearn import decomposition
@@ -43,24 +44,6 @@ def fasta_to_dct(file_name):
             print("Duplicate sequence ids found. Exiting")
             raise KeyError("Duplicate sequence ids found")
         dct[new_key] = v.upper().replace("-", "")
-
-    return dct
-
-
-def fasta_to_dct_rev(file_name):
-    """
-    :param file_name: The fasta formatted file to read from.
-    :return: a dictionary of the contents of the file name given. Dictionary in the format:
-    {sequence_id: sequence_string, id_2: sequence_2, etc.}
-    """
-    dct = collections.defaultdict(list)
-    my_gen = py3_fasta_iter(file_name)
-    for k, v in my_gen:
-        new_key = k.replace(" ", "_")
-        if new_key in dct.keys():
-            print("Duplicate sequence ids found. Exiting")
-            raise KeyError("Duplicate sequence ids found")
-        dct[str(v).upper().replace("-", "")].append(new_key)
 
     return dct
 
@@ -109,23 +92,31 @@ def cluster_hdbscan(pca_array, min_cluster_size):
 
 
 def collect_seqs_by_cluster(sequence_d, cluster_obj):
-    seqs_by_cluster = collections.defaultdict(list)
+
+    seqs_by_cluster = collections.defaultdict(lambda: collections.defaultdict(str))
     for entry in cluster_obj:
-        seq = sequence_d[entry[0]]
+        seq_name = entry[0]
+        seq = sequence_d[seq_name]
         cluster = str(entry[1]).zfill(3)
-        seqs_by_cluster[cluster].append(seq)
+        if cluster == "-01":
+            cluster = "out"
+        cluster_prob = str(entry[2])
+        new_name = f"{seq_name}_{cluster}_{cluster_prob}"
+        seqs_by_cluster[cluster][new_name] = seq
 
     return seqs_by_cluster
 
 
 def write_clusters_to_fasta(clustered_dict, prefix_name, outpath):
+    target_path = pathlib.Path(outpath, "clusters")
+    target_path.mkdir(parents=True, exist_ok=True)
     for clust, seq_dict in clustered_dict.items():
-        if clust == "-01":
-            clust = "outlier"
-        outfile = pathlib.Path(outpath, f"{prefix_name}_{clust}_cluster.fasta")
+        outfile = pathlib.Path(target_path, f"{prefix_name}_{clust}_cluster.fasta")
         with open(outfile, 'w') as fh:
             for seq_name, seq in seq_dict.items():
                 fh.write(f">{seq_name}\n{seq}\n")
+
+    return pathlib.Path(target_path).glob("*_cluster.fasta")
 
 
 def d_freq_lists(dna_list):
@@ -317,17 +308,17 @@ def rand_jitter(arr):
 
 
 def plot_clusters(clusterer, pca_array, num_clusts, outfile):
-    outfile = outfile.replace(".fasta", ".png")
+    outfile = str(outfile).replace(".fasta", ".png")
     palette = sns.color_palette("tab20", num_clusts)
     sns.set_context('poster')
     sns.set_style('white')
     sns.set_color_codes()
     plot_kwds = {'alpha': 0.8, 's': 80, 'linewidths': 0.1}
     zippy = list((zip(clusterer.labels_, clusterer.probabilities_)))
-    # cluster_colors = [sns.desaturate(palette[col], sat) if col != -1 else (0, 0, 0) for col, sat in zippy]
+    cluster_colors = [sns.desaturate(palette[col], sat) if col != -1 else (0, 0, 0) for col, sat in zippy]
     x = rand_jitter(pca_array.T[0])
     y = rand_jitter(pca_array.T[1])
-    plt.scatter(x, y, **plot_kwds)
+    plt.scatter(x, y, c=cluster_colors, **plot_kwds)
     w = 6.875
     h = 4
     f = plt.gcf()
@@ -336,7 +327,7 @@ def plot_clusters(clusterer, pca_array, num_clusts, outfile):
     plt.savefig(outfile, ext='png', dpi=600, format='png', facecolor='white', bbox_inches='tight')
 
 
-def main(infile, outpath, name, min_cluster_size, pca_components):
+def main(infile, outpath, name, min_cluster_size, kmer_size, pca_components):
 
     # get absolute paths
     infile = pathlib.Path(infile).absolute()
@@ -347,10 +338,9 @@ def main(infile, outpath, name, min_cluster_size, pca_components):
 
     in_seqs_d = fasta_to_dct(infile)
     total_number_seqs = len(in_seqs_d)
-    # in_seqs_d_reversed = fasta_to_dct_rev(infile)
 
     print("counting kmers for each sequence")
-    kmer_dict = calc_kmers(in_seqs_d, name, 5)
+    kmer_dict = calc_kmers(in_seqs_d, name, kmer_size)
     sequence_names = list(kmer_dict.keys())
     master_kmer_cnt_array = []
     for seq_name, kmer_counts_tups in kmer_dict.items():
@@ -359,40 +349,42 @@ def main(infile, outpath, name, min_cluster_size, pca_components):
             seq_kmer_array.append(cnt)
         master_kmer_cnt_array.append(seq_kmer_array)
 
-    # Reduce dimensionality with PCA
-    print("computing PCA for alignment")
-    reduced_dimension_array = compute_pca(master_kmer_cnt_array, pca_components)
+    use_pca = True
+    if use_pca:
+        # Reduce dimensionality with PCA
+        print("computing PCA for alignment")
+        reduced_dimension_array = compute_pca(master_kmer_cnt_array, pca_components)
+        cluster_array = reduced_dimension_array
+    else:
+        cluster_array = master_kmer_cnt_array
 
-    # cluster (HDBSCAN) on first two principal components
-    print("Clustering sequences by first {} components".format(pca_components))
-    clusterer = cluster_hdbscan(master_kmer_cnt_array, min_cluster_size)
-    # clusterer = cluster_hdbscan(master_kmer_cnt_array, min_cluster_size)
+    # cluster (HDBSCAN)
+    print("Clustering sequences")
+    clusterer = cluster_hdbscan(cluster_array, min_cluster_size)
 
     # get seq names, clusters and cluster probability values
     names_clusts_clustprob = list(zip(sequence_names, clusterer.labels_, clusterer.probabilities_))
-    seqs_by_cluster = collect_seqs_by_cluster(in_seqs_d, names_clusts_clustprob)
 
     # number of clusters
-    num_clusts = sorted(list(set(clusterer.labels_)))[-1]
-    print(f"There were {num_clusts} clusters found")
+    num_clusts = sorted(list(set(clusterer.labels_)))[-1] +1
+
+    if use_pca:
+        print(f"There were {num_clusts} clusters found")
+        plot_clusters(clusterer, cluster_array, num_clusts, outfile)
 
     # collect sequences in to their clusters
-    clustered_seqs_d = collections.defaultdict(dict)
-    for i in names_clusts_clustprob:
-        seq_name = i[0]
-        cluster = str(i[1]).zfill(3)
-        cluster_prob = str(i[2])
-        seq = in_seqs_d[seq_name]
-
-        new_name = "{}_{}_{}".format(seq_name, cluster, cluster_prob)
-        clustered_seqs_d[cluster][new_name] = seq
+    clustered_seqs_d = collect_seqs_by_cluster(in_seqs_d, names_clusts_clustprob)
 
     # write each cluster to a file
-    write_clusters_to_fasta(clustered_seqs_d, name, outpath)
+    clustered_outfiles = write_clusters_to_fasta(clustered_seqs_d, name, outpath)
+    for file in clustered_outfiles:
+        cmd = f"mafft {file} > {str(file).replace('.fasta', '_aligned.fasta')} 2>/dev/null"
+        subprocess.call(cmd, shell=True)
+        os.unlink(str(file))
 
     print("Getting consensus/centroid for each cluster")
     # centroids, outliers = get_centroids(clustered_seqs_d, total_number_seqs, in_seqs_d_reversed, in_seqs_d, fields)
-    plot_clusters(clusterer, reduced_dimension_array, num_clusts, outfile)
+
 
     # print("Adjusting cluster frequencies based on closest outliers")
     # final_centroids = rescue_outliers_for_freq_updating(centroids, total_number_seqs, outliers)
@@ -419,7 +411,9 @@ if __name__ == "__main__":
                         help='The prefix for the outfile', required=True)
     parser.add_argument('-s', '--min_cluster_size', default=2, type=int,
                         help='The minimum number of sequences needed to form a cluster', required=False)
-    parser.add_argument('-c', '--pca_components', default=2, type=int,
+    parser.add_argument('-k', '--kmer_size', default=5, type=int,
+                        help='The minimum number of sequences needed to form a cluster', required=False)
+    parser.add_argument('-c', '--pca_components', default=20, type=int,
                         help='The number of PCA components to pass to the clustering algorithm', required=False)
 
     args = parser.parse_args()
@@ -427,6 +421,7 @@ if __name__ == "__main__":
     outpath = args.outpath
     name = args.name
     min_cluster_size = args.min_cluster_size
+    kmer_size = args.kmer_size
     pca_components = args.pca_components
 
-    main(infile, outpath, name, min_cluster_size, pca_components)
+    main(infile, outpath, name, min_cluster_size, kmer_size, pca_components)

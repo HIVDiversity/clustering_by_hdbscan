@@ -32,5 +32,3 @@ dimensionality reduced using PCA (alignment dependent method only)
 Step 3:
 
 Sequences are clustered using hdbscan.
-
-
