@@ -351,7 +351,7 @@ def main(infile, outpath, name, min_cluster_size):
             continue
 
         consensus = consensus_maker(aligned_cluster_seq_d)
-        cons_name = f"{cluster_name}_"
+        cons_name = f"{cluster_name}"
         cluster_size = len(aligned_cluster_seq_d.keys())
         seq_to_use = consensus
         if consensus in fasta_to_dct_rev(infile).keys():
