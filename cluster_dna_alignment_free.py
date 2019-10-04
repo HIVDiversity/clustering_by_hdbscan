@@ -266,14 +266,13 @@ def consensus_maker(d):
     return consensus
 
 
-def main(infile, outpath, name, min_cluster_size, kmer_size):
+def main(infile, outpath, name, min_cluster_size):
     """
     script to haplotype DNA sequences based on kmer counts and hierarchical clustering
     :param infile: (str) path and name of the input fasta file
     :param outpath: (str) the path to where the outfiles will be written
     :param name: (str) prefix for the outfiles
     :param min_cluster_size: (int) minimum number of sequences needed to make a cluster
-    :param kmer_size: (int) the length of the kmer = longer gives less resolution
     :return: None
     """
 
@@ -292,6 +291,7 @@ def main(infile, outpath, name, min_cluster_size, kmer_size):
 
     print("counting kmers for each sequence")
     # Todo: add all kmers up to elbow
+    kmer_size = 2
     kmer_dict = calc_kmers(in_seqs_d, name, kmer_size)
     sequence_names = list(kmer_dict.keys())
     master_kmer_cnt_array = []
@@ -397,14 +397,11 @@ if __name__ == "__main__":
                         help='The prefix for the outfile', required=True)
     parser.add_argument('-s', '--min_cluster_size', default=2, type=int,
                         help='The minimum number of sequences needed to form a cluster', required=False)
-    parser.add_argument('-k', '--kmer_size', default=5, type=int,
-                        help='The minimum number of sequences needed to form a cluster', required=False)
 
     args = parser.parse_args()
     infile = args.infile
     outpath = args.outpath
     name = args.name
     min_cluster_size = args.min_cluster_size
-    kmer_size = args.kmer_size
 
-    main(infile, outpath, name, min_cluster_size, kmer_size)
+    main(infile, outpath, name, min_cluster_size)
