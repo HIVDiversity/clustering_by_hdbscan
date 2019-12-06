@@ -66,7 +66,7 @@ def fasta_to_dct_rev(file_name):
     return dct
 
 
-def calc_kmers(seq_dict, name_prefix, ksize=6):
+def calc_kmers(seq_dict, ksize=6):
     """
     function to generate kmer counts for each sequence in a dict of key=sequence, value=list of seq names
     :param seq_dict: (str) dict of key=sequence, value=list of seq names
@@ -293,7 +293,7 @@ def main(infile, outpath, name, min_cluster_size, kmer_size):
     total_number_seqs = len(in_seqs_d)
 
     print("\ncounting kmers for each sequence\n")
-    kmer_dict = calc_kmers(in_seqs_d, name, kmer_size)
+    kmer_dict = calc_kmers(in_seqs_d, kmer_size)
     sequence_names = list(kmer_dict.keys())
     master_kmer_cnt_array = []
     for seq_name, kmer_counts_tups in kmer_dict.items():
