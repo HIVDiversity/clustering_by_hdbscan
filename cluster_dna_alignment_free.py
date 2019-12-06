@@ -107,9 +107,12 @@ def collect_seqs_by_cluster(sequence_d, cluster_obj):
         seq_name = entry[0]
         seq = sequence_d[seq_name]
         cluster = str(entry[1]).zfill(3)
+        cluster_prob = entry[2]
         if cluster == "-01":
             cluster = "out"
-        cluster_prob = str(entry[2])
+        elif cluster_prob <= 0.5:
+            cluster = "out"
+
         new_name = f"{seq_name}_{cluster}_{cluster_prob}"
         seqs_by_cluster[cluster][new_name] = seq
 
@@ -323,7 +326,6 @@ def main(infile, outpath, name, min_cluster_size, kmer_size):
     clustered_outfiles = write_clusters_to_fasta(clustered_seqs_d, name, outpath)
 
     # align each cluster's fasta file
-    # Todo: only asign if the prob of being in the cluster is > some value (how to adjust feq values?)
     aligned_cluster_files = []
     for file in clustered_outfiles:
         path = file.parent
@@ -343,9 +345,8 @@ def main(infile, outpath, name, min_cluster_size, kmer_size):
         aligned_cluster_seq_d = fasta_to_dct(file)
 
         # if cluster file is the outliers, get num of outlies and subtract from total
-        # Todo: try to find closest real cluster consensus and assign seq to that cluster for freq adjustment?
         if "out" in cluster_name.split("_"):
-            total_number_seqs += len(aligned_cluster_seq_d.keys())
+            total_number_seqs -= len(aligned_cluster_seq_d.keys())
             continue
 
         consensus = consensus_maker(aligned_cluster_seq_d)
