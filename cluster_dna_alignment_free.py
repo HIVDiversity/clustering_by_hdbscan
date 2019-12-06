@@ -66,7 +66,7 @@ def fasta_to_dct_rev(file_name):
     return dct
 
 
-def calc_kmers(seq_dict, name_prefix, ksize=5):
+def calc_kmers(seq_dict, name_prefix, ksize=6):
     """
     function to generate kmer counts for each sequence in a dict of key=sequence, value=list of seq names
     :param seq_dict: (str) dict of key=sequence, value=list of seq names
@@ -266,7 +266,7 @@ def consensus_maker(d):
     return consensus
 
 
-def main(infile, outpath, name, min_cluster_size):
+def main(infile, outpath, name, min_cluster_size, kmer_size):
     """
     script to haplotype DNA sequences based on kmer counts and hierarchical clustering
     :param infile: (str) path and name of the input fasta file
@@ -281,7 +281,7 @@ def main(infile, outpath, name, min_cluster_size):
     outpath = pathlib.Path(outpath).absolute()
     out_name = name + "_clustered_haplotypes.fasta"
     outfile = pathlib.Path(outpath, out_name)
-    print("Outfile will be: ", outfile)
+    print("\nOutfile will be: ", outfile)
 
     in_seqs_d = fasta_to_dct(infile)
     for seq_name, seq in in_seqs_d.items():
@@ -289,9 +289,7 @@ def main(infile, outpath, name, min_cluster_size):
 
     total_number_seqs = len(in_seqs_d)
 
-    print("counting kmers for each sequence")
-    # Todo: add all kmers up to elbow
-    kmer_size = 2
+    print("\ncounting kmers for each sequence\n")
     kmer_dict = calc_kmers(in_seqs_d, name, kmer_size)
     sequence_names = list(kmer_dict.keys())
     master_kmer_cnt_array = []
@@ -306,7 +304,7 @@ def main(infile, outpath, name, min_cluster_size):
     cluster_array = compute_pca(kmer_array)
 
     # cluster (HDBSCAN)
-    print("Clustering sequences")
+    print("\nClustering sequences\n")
     clusterer = cluster_hdbscan(cluster_array, min_cluster_size)
 
     # get seq names, clusters and cluster probability values
@@ -314,7 +312,7 @@ def main(infile, outpath, name, min_cluster_size):
 
     # number of clusters
     num_clusts = sorted(list(set(clusterer.labels_)))[-1] + 1
-    print(f"There were {num_clusts} clusters found")
+    print(f"\nThere were {num_clusts} clusters found\n")
     plot_outfile = pathlib.Path(outpath, name + "_clusters_by_2_PCA_components.png")
     plot_clusters(clusterer, cluster_array, num_clusts, plot_outfile)
 
@@ -336,7 +334,7 @@ def main(infile, outpath, name, min_cluster_size):
         subprocess.call(cmd, shell=True)
         os.unlink(str(file))
 
-    print("Getting consensus/centroid for each cluster")
+    print("\nGetting consensus/centroid for each cluster\n")
     master_clustered_cons_d = collections.defaultdict(str)
 
     # read in fasta files
@@ -379,7 +377,8 @@ def main(infile, outpath, name, min_cluster_size):
             new_clust_name = f"{'_'.join(name_parts)}_{cluster_freq}"
             fh.write(f">{new_clust_name}\n{cluster_seq}\n")
 
-    print("{} clusters were identified".format(str((num_clusts))))
+    print(f"\n{num_clusts} clusters were identified\n")
+
     print("Clustering complete")
 
 
@@ -397,11 +396,13 @@ if __name__ == "__main__":
                         help='The prefix for the outfile', required=True)
     parser.add_argument('-s', '--min_cluster_size', default=2, type=int,
                         help='The minimum number of sequences needed to form a cluster', required=False)
-
+    parser.add_argument('-k', '--kmer_size', default=6, type=int,
+                        help='The size of the kmer', required=False)
     args = parser.parse_args()
     infile = args.infile
     outpath = args.outpath
     name = args.name
     min_cluster_size = args.min_cluster_size
+    kmer_size = args.kmer_size
 
-    main(infile, outpath, name, min_cluster_size)
+    main(infile, outpath, name, min_cluster_size, kmer_size)
